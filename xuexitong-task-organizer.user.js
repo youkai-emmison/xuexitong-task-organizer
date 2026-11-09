@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通任务整理表
 // @namespace    https://github.com/Cooanyh
-// @version      2.5.0-organizer.1
+// @version      2.5.0-organizer.2
 // @author       甜檸Cirtron (lcandy2); Coren; Codex
 // @description  汇总学习通待完成任务，按课程、类型和起止时间整理，支持筛选及 CSV 导出。
 // @license      AGPL-3.0-or-later
@@ -3659,6 +3659,7 @@
 
       const organizerCourse = vue.ref('');
       const organizerType = vue.ref('');
+      const organizerSelected = vue.ref(new Set());
       // 当前视图状态：'dashboard' | 'todo' | 'homework' | 'exam' | 'activities' | 'progress'
       const currentView = vue.ref('dashboard');
       let dashboardSkeletonTimer = null;
@@ -3818,6 +3819,7 @@
         selectMode.value = false;
         selectedForIgnore.value = new Set();
         selectedItemsMap.value = new Map();
+        organizerSelected.value = new Set();
       };
 
       // 取消忽略
@@ -7028,6 +7030,20 @@
           const types = [...new Set(organizerRows.map(row => row.type))].sort();
           const rows = organizerRows.filter(row => (!organizerCourse.value || row.course === organizerCourse.value) && (!organizerType.value || row.type === organizerType.value))
             .sort((a, b) => (a.end || '9999').localeCompare(b.end || '9999'));
+          const keyOf = row => getItemKey(row.item, 'todo');
+          const toggleRow = row => {
+            const next = new Set(organizerSelected.value);
+            const key = keyOf(row);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            organizerSelected.value = next;
+          };
+          const selectedRows = rows.filter(row => organizerSelected.value.has(keyOf(row)));
+          const allSelected = rows.length > 0 && rows.every(row => organizerSelected.value.has(keyOf(row)));
+          const toggleAll = () => {
+            const next = new Set(organizerSelected.value);
+            rows.forEach(row => allSelected ? next.delete(keyOf(row)) : next.add(keyOf(row)));
+            organizerSelected.value = next;
+          };
           const select = (value, options, onChange, label) => vue.createVNode('select', { value, onChange, 'aria-label': label, style: 'padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:white' }, [
             vue.createVNode('option', { value: '' }, `全部${label}`),
             ...options.map(option => vue.createVNode('option', { value: option }, option))
@@ -7038,20 +7054,21 @@
               vue.createVNode('h2', { style: 'margin:0' }, `待完成任务（${rows.length}）`),
               select(organizerCourse.value, courses, e => organizerCourse.value = e.target.value, '课程'),
               select(organizerType.value, types, e => organizerType.value = e.target.value, '类型'),
-              vue.createVNode('button', { class: 'external-link-btn', onClick: exportOrganizerCsv }, '导出 CSV')
+              vue.createVNode('button', { class: 'external-link-btn', onClick: exportOrganizerCsv }, '导出 CSV'),
+              vue.createVNode('button', { class: 'ignore-btn', disabled: selectedRows.length === 0, onClick: () => requestIgnore(selectedRows.map(row => row.item), 'todo') }, `忽略所选（${selectedRows.length}）`)
             ]),
             vue.createVNode('p', { style: 'color:#64748b' }, '仅展示已读取的待完成任务。页面未提供的时间显示为“未提供”；请以学习通原页面为准。'),
             vue.createVNode('div', { style: 'overflow-x:auto;background:white;border-radius:10px' }, [
               vue.createVNode('table', { style: 'width:100%;border-collapse:collapse;text-align:left' }, [
-                vue.createVNode('thead', null, [vue.createVNode('tr', null, ['课程','任务','类型','开始时间','截止时间','状态','操作'].map(h => vue.createVNode('th', { style: 'padding:12px;border-bottom:1px solid #e2e8f0;white-space:nowrap' }, h)))]),
-                vue.createVNode('tbody', null, rows.length ? rows.map(row => vue.createVNode('tr', null, [row.course,row.title,row.type,row.start || '未提供',row.end || '未提供',row.status].map(v => vue.createVNode('td', { style: 'padding:12px;border-bottom:1px solid #f1f5f9' }, v)).concat([
-                  vue.createVNode('td', { style: 'padding:12px;border-bottom:1px solid #f1f5f9' }, [vue.createVNode('a', { href: row.link, target: '_blank', rel: 'noopener noreferrer' }, '查看')])
-                ]))) : [vue.createVNode('tr', null, [vue.createVNode('td', { colspan: 7, style: 'padding:24px;text-align:center' }, '没有匹配的待完成任务')])])
+                vue.createVNode('thead', null, [vue.createVNode('tr', null, [vue.createVNode('th', { style: 'padding:12px;border-bottom:1px solid #e2e8f0' }, [vue.createVNode('input', { type: 'checkbox', checked: allSelected, disabled: rows.length === 0, onChange: toggleAll, 'aria-label': '选择当前筛选结果中的全部任务' })]), ...['课程','任务','类型','开始时间','截止时间','状态','操作'].map(h => vue.createVNode('th', { style: 'padding:12px;border-bottom:1px solid #e2e8f0;white-space:nowrap' }, h))])]),
+                vue.createVNode('tbody', null, rows.length ? rows.map(row => vue.createVNode('tr', null, [vue.createVNode('td', { style: 'padding:12px;border-bottom:1px solid #f1f5f9' }, [vue.createVNode('input', { type: 'checkbox', checked: organizerSelected.value.has(keyOf(row)), onChange: () => toggleRow(row), 'aria-label': `选择任务：${row.title}` })]), ...[row.course,row.title,row.type,row.start || '未提供',row.end || '未提供',row.status].map(v => vue.createVNode('td', { style: 'padding:12px;border-bottom:1px solid #f1f5f9' }, v))].concat([
+                  vue.createVNode('td', { style: 'padding:12px;border-bottom:1px solid #f1f5f9' }, [vue.createVNode('a', { href: row.link, target: '_blank', rel: 'noopener noreferrer' }, '查看'), vue.createVNode('button', { class: 'ignore-btn', style: 'margin-left:8px', onClick: () => requestIgnore(row.item, 'todo') }, '忽略')])
+                ]))) : [vue.createVNode('tr', null, [vue.createVNode('td', { colspan: 8, style: 'padding:24px;text-align:center' }, '没有匹配的待完成任务')])])
               ])
             ])
           ]);
         };
-        if (currentView.value === 'organizer') return vue.createVNode('div', { class: 'dashboard-wrapper' }, [renderOrganizer(), ...renderDeadlineReminderLayers()]);
+        if (currentView.value === 'organizer') return vue.createVNode('div', { class: 'dashboard-wrapper' }, [renderOrganizer(), renderConfirmDialog(), ...renderDeadlineReminderLayers()]);
         if (currentView.value === 'settings') {
           return vue.createVNode("div", { class: "dashboard-wrapper" }, [
             vue.createVNode("div", { class: "main-content" }, [renderSettingsView()]),
