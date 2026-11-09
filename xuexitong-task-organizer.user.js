@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通任务整理表
 // @namespace    https://github.com/Cooanyh
-// @version      2.5.0-organizer.2
+// @version      2.5.0-organizer.3
 // @author       甜檸Cirtron (lcandy2); Coren; Codex
 // @description  汇总学习通待完成任务，按课程、类型和起止时间整理，支持筛选及 CSV 导出。
 // @license      AGPL-3.0-or-later
@@ -316,20 +316,49 @@
     return `${sec}__${id}__${title}`;
   };
 
+  // 同一任务在待办、作业、考试与课程任务中可能有不同的栏目键。
+  // 优先比对平台任务 ID；旧版记录没有 ID 时再用课程、类型和标题匹配。
+  const getIgnoreIdentity = (item) => ({
+    type: String(item.type || '').trim(),
+    title: String(item.title || item.courseName || '').trim(),
+    course: String(item.course || item.courseName || '').trim(),
+    courseId: String(item.courseId || '').trim(),
+    clazzId: String(item.clazzId || item.classId || '').trim(),
+    workId: String(item.workId || '').trim(),
+    examId: String(item.examId || '').trim(),
+    planId: String(item.planId || '').trim(),
+    taskId: String(item.taskId || '').trim(),
+    activeId: String(item.activeId || '').trim()
+  });
+
+  const sameIgnoredTask = (item, saved) => {
+    const current = getIgnoreIdentity(item);
+    const previous = getIgnoreIdentity(saved);
+    if (current.type && previous.type && current.type !== previous.type) return false;
+    for (const id of ['workId', 'examId', 'planId', 'taskId', 'activeId']) {
+      if (current[id] && previous[id] && current[id] !== previous[id]) return false;
+      if (current[id] && previous[id] && current[id] === previous[id]) return true;
+    }
+    if (!current.title || !previous.title || current.title !== previous.title) return false;
+    if (current.courseId && previous.courseId) return current.courseId === previous.courseId
+      && (!current.clazzId || !previous.clazzId || current.clazzId === previous.clazzId);
+    const genericCourse = value => !value || value === '考试课程' || value === '未识别课程';
+    if (!genericCourse(current.course) && !genericCourse(previous.course)) return current.course === previous.course;
+    // 课程无法识别时只凭标题匹配会误伤其他课程的同名任务。
+    return false;
+  };
+
   const isItemIgnored = (item, sectionType) => {
     const ignored = getIgnoredItems();
-    return isCourseIgnored(item) || !!ignored[getItemKey(item, sectionType)];
+    return isCourseIgnored(item) || !!ignored[getItemKey(item, sectionType)]
+      || Object.values(ignored).some(saved => saved && sameIgnoredTask(item, saved));
   };
 
   const ignoreItem = (item, sectionType) => {
     const ignored = getIgnoredItems();
     const sec = sectionType || item._sectionType || 'unknown';
     ignored[getItemKey(item, sectionType)] = {
-      title: item.title || item.courseName || '',
-      type: item.type || '',
-      course: item.course || item.courseName || '',
-      sectionType: sec,
-      ignoredAt: Date.now()
+      ...getIgnoreIdentity(item), sectionType: sec, ignoredAt: Date.now()
     };
     saveIgnoredItems(ignored);
   };
@@ -345,11 +374,7 @@
     items.forEach(item => {
       const sec = sectionType || item._sectionType || 'unknown';
       ignored[getItemKey(item, sectionType)] = {
-        title: item.title || item.courseName || '',
-        type: item.type || '',
-        course: item.course || item.courseName || '',
-        sectionType: sec,
-        ignoredAt: Date.now()
+        ...getIgnoreIdentity(item), sectionType: sec, ignoredAt: Date.now()
       };
     });
     saveIgnoredItems(ignored);
@@ -357,9 +382,7 @@
 
   const unignoreItems = (items, sectionType) => {
     const ignored = getIgnoredItems();
-    items.forEach(item => {
-      delete ignored[getItemKey(item, sectionType)];
-    });
+    items.forEach(item => { delete ignored[getItemKey(item, sectionType)]; });
     saveIgnoredItems(ignored);
   };
 
