@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通任务整理表
 // @namespace    https://github.com/Cooanyh
-// @version      2.5.0-organizer.3
+// @version      2.5.0-organizer.4
 // @author       甜檸Cirtron (lcandy2); Coren; Codex
 // @description  汇总学习通待完成任务，按课程、类型和起止时间整理，支持筛选及 CSV 导出。
 // @license      AGPL-3.0-or-later
@@ -308,12 +308,14 @@
     localStorage.setItem(IGNORE_STORAGE_KEY, JSON.stringify(items));
   };
 
-  // 生成唯一标识（包含板块前缀，防止不同板块同名项冲突）
+  // 栏目内的记录键含具体任务 ID，避免同课程的同名任务互相覆盖。
   const getItemKey = (item, sectionType) => {
     const sec = sectionType || item._sectionType || 'unknown';
-    const id = item.courseId || item.examId || item.workId || item.activeId || '';
+    const taskId = item.workId || item.examId || item.planId || item.taskId || item.activeId || '';
+    const courseId = item.courseId || '';
+    const clazzId = item.clazzId || item.classId || '';
     const title = item.title || item.courseName || '';
-    return `${sec}__${id}__${title}`;
+    return `${sec}__${courseId}__${clazzId}__${taskId}__${title}`;
   };
 
   // 同一任务在待办、作业、考试与课程任务中可能有不同的栏目键。
